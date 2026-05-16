@@ -1,0 +1,1621 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GBB 彈道落點計算</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f5f2;
+      --panel: #ffffff;
+      --ink: #1d211f;
+      --muted: #66706b;
+      --line: #d9ded9;
+      --field: #f8faf8;
+      --accent: #245c52;
+      --warn: #9a4a10;
+      --shadow: 0 18px 42px rgba(35, 43, 39, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    main {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) minmax(360px, 1fr);
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .controls,
+    .chart,
+    .preview {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 18px 18px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .subline {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    form {
+      display: grid;
+      gap: 13px;
+      padding: 18px;
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.2;
+    }
+
+    .field {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--field);
+      overflow: hidden;
+      transition: border-color 140ms ease, box-shadow 140ms ease;
+    }
+
+    .field:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(36, 92, 82, 0.14);
+    }
+
+    input {
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      font-size: 16px;
+      padding: 10px 11px;
+      appearance: textfield;
+    }
+
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+      margin: 0;
+      appearance: none;
+    }
+
+    input[type="checkbox"] {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .unit {
+      padding: 0 11px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .toggle-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--field);
+      padding: 8px 10px;
+      cursor: pointer;
+      transition: border-color 140ms ease, box-shadow 140ms ease;
+    }
+
+    .toggle-row:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(36, 92, 82, 0.14);
+    }
+
+    .toggle-title {
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.2;
+    }
+
+    .switch {
+      position: relative;
+      inline-size: 42px;
+      block-size: 24px;
+      border-radius: 999px;
+      background: #c7cec8;
+      transition: background 140ms ease;
+    }
+
+    .switch::after {
+      content: "";
+      position: absolute;
+      inset-block-start: 3px;
+      inset-inline-start: 3px;
+      inline-size: 18px;
+      block-size: 18px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(29, 33, 31, 0.24);
+      transition: transform 140ms ease;
+    }
+
+    input[type="checkbox"]:checked + .switch {
+      background: var(--accent);
+    }
+
+    input[type="checkbox"]:checked + .switch::after {
+      transform: translateX(18px);
+    }
+
+    .toggle-state {
+      min-width: 58px;
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .results {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 0 18px 18px;
+    }
+
+    .metric {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 11px;
+      background: #fbfcfb;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.2;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 5px;
+      font-size: clamp(16px, 3vw, 22px);
+      line-height: 1.1;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .metric.wide {
+      grid-column: 1 / -1;
+    }
+
+    .metric.wide strong {
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    .status {
+      min-height: 38px;
+      margin: 0 18px 18px;
+      padding: 10px 11px;
+      border-radius: 7px;
+      background: #f7f4ee;
+      color: var(--warn);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .status.ok {
+      background: #eff6f2;
+      color: #275847;
+    }
+
+    .visuals {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto auto;
+      align-content: start;
+      gap: 18px;
+    }
+
+    .preview {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto auto auto;
+      overflow: hidden;
+    }
+
+    .chart {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto auto auto auto;
+      overflow: hidden;
+    }
+
+    .chart-export-row,
+    .chart-top,
+    .preview-top,
+    .preview-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .chart-export-row {
+      justify-content: flex-end;
+      padding-block: 10px;
+    }
+
+    .preview-bottom {
+      border-top: 1px solid var(--line);
+      border-bottom: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .chart-title,
+    .preview-title {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .chart-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+      gap: 8px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .chart-stat {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 5px;
+      min-height: 28px;
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fbfcfb;
+      white-space: nowrap;
+    }
+
+    .chart-stat span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .chart-stat strong {
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .legend {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .legend-line {
+      width: 22px;
+      border-top: 2px dashed currentColor;
+    }
+
+    .legend-line.red {
+      color: #c33b34;
+    }
+
+    .legend-line.green {
+      color: #248b57;
+    }
+
+    .badge {
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .preview-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .export-btn {
+      min-height: 30px;
+      border: 1px solid var(--ink);
+      border-radius: 7px;
+      background: #ffffff;
+      color: var(--ink);
+      padding: 6px 10px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+    }
+
+    .export-btn:active,
+    .export-btn.active {
+      background: var(--ink);
+      color: #ffffff;
+      transform: translateY(1px);
+    }
+
+    .chart-wrap,
+    .paper-wrap {
+      min-height: 0;
+      display: grid;
+      place-items: start center;
+      padding: 0;
+      background: #ffffff;
+    }
+
+    .chart-svg,
+    .target-svg {
+      display: block;
+    }
+
+    .chart-svg {
+      width: 100%;
+      height: 390px;
+      min-height: 0;
+    }
+
+    .target-svg {
+      width: auto;
+      height: min(58vh, 560px);
+      max-width: 100%;
+      max-height: 100%;
+      aspect-ratio: 210 / 297;
+    }
+
+    .chart-bg {
+      fill: #ffffff;
+      stroke: #cfd5cf;
+      stroke-width: 1;
+    }
+
+    .chart-grid {
+      stroke: #e1e6e1;
+      stroke-width: 1;
+    }
+
+    .chart-axis {
+      stroke: #929c96;
+      stroke-width: 1.2;
+    }
+
+    .chart-reference-line {
+      stroke: #050505;
+      stroke-width: 0.75;
+      stroke-dasharray: 4 5;
+      opacity: 0.72;
+    }
+
+    .chart-reference-label {
+      fill: #050505;
+      font-size: 10px;
+      text-anchor: end;
+    }
+
+    .sight-path {
+      stroke: #c33b34;
+      stroke-width: 2.5;
+      stroke-dasharray: 9 7;
+      fill: none;
+    }
+
+    .trajectory-path {
+      stroke: #248b57;
+      stroke-width: 3;
+      stroke-dasharray: 8 6;
+      fill: none;
+    }
+
+    .chart-marker {
+      stroke: #262b28;
+      stroke-width: 1.4;
+      stroke-dasharray: 4 5;
+    }
+
+    .chart-dot {
+      fill: #050505;
+      stroke: #ffffff;
+      stroke-width: 2;
+    }
+
+    .chart-label {
+      fill: #66706b;
+      font-size: 12px;
+    }
+
+    .chart-label.end {
+      text-anchor: end;
+    }
+
+    .paper {
+      fill: #fff;
+      stroke: #cfd5cf;
+      stroke-width: 1;
+    }
+
+    .guide {
+      stroke: #e4e8e4;
+      stroke-width: 0.45;
+    }
+
+    .center-dot {
+      fill: #050505;
+    }
+
+    .target-ring {
+      fill: none;
+      stroke: #050505;
+      stroke-width: 0.35;
+      opacity: 0.9;
+    }
+
+    .impact-cross {
+      stroke: #050505;
+      stroke-width: 0.75;
+      stroke-linecap: round;
+    }
+
+    .edge-note {
+      fill: #1d211f;
+      font-size: 8px;
+      font-weight: 700;
+      text-anchor: middle;
+    }
+
+    @media (max-width: 860px) {
+      main {
+        grid-template-columns: 1fr;
+        padding: 10px;
+      }
+
+      .visuals {
+        grid-template-rows: auto auto;
+      }
+
+      .target-svg {
+        width: auto;
+        max-width: 100%;
+        max-height: 68vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="controls" aria-label="彈道參數">
+      <div class="header">
+        <h1>GBB 彈道落點計算</h1>
+        <div class="subline">球形 BB 阻力模型即時計算，落點以瞄準黑點中心為基準。</div>
+      </div>
+
+      <form id="ballistic-form">
+        <label>
+          靶紙距離
+          <span class="field">
+            <input id="targetDistance" type="number" min="1" max="120" step="0.5" value="15" inputmode="decimal">
+            <span class="unit">m</span>
+          </span>
+        </label>
+
+        <label>
+          歸零距離
+          <span class="field">
+            <input id="zeroDistance" type="number" min="1" max="120" step="0.5" value="30" inputmode="decimal">
+            <span class="unit">m</span>
+          </span>
+        </label>
+
+        <label>
+          彈丸重量
+          <span class="field">
+            <input id="bbWeight" type="number" min="0.05" max="1.2" step="0.01" value="0.36" inputmode="decimal">
+            <span class="unit">g</span>
+          </span>
+        </label>
+
+        <label>
+          初速
+          <span class="field">
+            <input id="muzzleVelocity" type="number" min="20" max="220" step="1" value="100" inputmode="decimal">
+            <span class="unit">m/s</span>
+          </span>
+        </label>
+
+        <label>
+          瞄準高度
+          <span class="field">
+            <input id="sightHeight" type="number" min="0" max="5" step="0.01" value="2.26" inputmode="decimal">
+            <span class="unit">inch</span>
+          </span>
+        </label>
+
+        <label>
+          圓形彈丸直徑
+          <span class="field">
+            <input id="bbDiameter" type="number" min="3" max="10" step="0.01" value="6" inputmode="decimal">
+            <span class="unit">mm</span>
+          </span>
+        </label>
+
+        <label>
+          GBB HOP compensation
+          <span class="toggle-row">
+            <span class="toggle-title">HOP 補償</span>
+            <input id="hopCompensation" type="checkbox" checked>
+            <span class="switch" aria-hidden="true"></span>
+            <span id="hopState" class="toggle-state">Done</span>
+          </span>
+        </label>
+      </form>
+
+      <div class="results">
+        <div class="metric">
+          <span>預期落點離靶心高低差</span>
+          <strong id="dropValue">0 mm</strong>
+        </div>
+        <div class="metric">
+          <span>槍管仰角</span>
+          <strong id="angleValue">0 deg</strong>
+        </div>
+        <div class="metric">
+          <span>到靶時間</span>
+          <strong id="timeValue">0 ms</strong>
+        </div>
+        <div class="metric">
+          <span>球形 BC</span>
+          <strong id="bcValue">0 kg/m²</strong>
+        </div>
+        <div class="metric">
+          <span>空氣阻力係數</span>
+          <strong id="cdValue">Cd 0</strong>
+        </div>
+        <div class="metric wide">
+          <span>彈道模型</span>
+          <strong id="modelValue">球形 BB Cd(Re) 數值積分</strong>
+        </div>
+      </div>
+
+      <div id="status" class="status ok">參數有效。</div>
+    </section>
+
+    <div class="visuals">
+      <section class="chart" aria-label="彈道圖">
+        <div class="chart-export-row">
+          <button id="exportJpegButton" class="export-btn" type="button">Export to JPEG</button>
+        </div>
+        <div class="chart-top">
+          <div class="chart-title">視線與彈道 vs 距離</div>
+          <div class="legend" aria-label="圖例">
+            <span class="legend-item"><span class="legend-line red"></span>視線</span>
+            <span class="legend-item"><span class="legend-line green"></span>彈道</span>
+          </div>
+        </div>
+
+          <div class="chart-summary" aria-label="靶紙距離落點摘要">
+            <div class="chart-stat">
+              <span>高低差</span>
+              <strong id="chartTopOffset">0 mm</strong>
+            </div>
+            <div class="chart-stat">
+              <span>離靶心</span>
+              <strong id="chartTopDistance">0 mm</strong>
+            </div>
+            <div class="chart-stat">
+              <span>靶紙距離</span>
+              <strong id="chartMetricTargetDistance">15 m</strong>
+            </div>
+            <div class="chart-stat">
+              <span>歸零距離</span>
+              <strong id="chartMetricZeroDistance">30 m</strong>
+            </div>
+            <div class="chart-stat">
+              <span>彈丸重量</span>
+              <strong id="chartMetricWeight">0.36 g</strong>
+            </div>
+            <div class="chart-stat">
+              <span>初速</span>
+              <strong id="chartMetricVelocity">100 m/s</strong>
+            </div>
+            <div class="chart-stat">
+              <span>瞄準高度</span>
+              <strong id="chartMetricSightHeight">2.26 in</strong>
+            </div>
+            <div class="chart-stat">
+              <span>彈丸直徑</span>
+              <strong id="chartMetricDiameter">6 mm</strong>
+            </div>
+            <div class="chart-stat">
+              <span>槍管仰角</span>
+              <strong id="chartMetricAngle">0 deg</strong>
+            </div>
+            <div class="chart-stat">
+              <span>到靶時間</span>
+              <strong id="chartMetricTime">0 ms</strong>
+            </div>
+        </div>
+
+        <div class="chart-wrap">
+          <svg class="chart-svg" viewBox="0 0 640 350" role="img" aria-label="紅色視線虛線與綠色彈道虛線">
+            <rect class="chart-bg" x="0.5" y="0.5" width="639" height="349" rx="6"></rect>
+            <g aria-hidden="true">
+              <line class="chart-grid" x1="96" y1="28" x2="96" y2="307"></line>
+              <line class="chart-grid" x1="228" y1="28" x2="228" y2="307"></line>
+              <line class="chart-grid" x1="360" y1="28" x2="360" y2="307"></line>
+              <line class="chart-grid" x1="492" y1="28" x2="492" y2="307"></line>
+              <line class="chart-grid" x1="624" y1="28" x2="624" y2="307"></line>
+              <line class="chart-grid" x1="96" y1="28" x2="624" y2="28"></line>
+              <line class="chart-grid" x1="96" y1="121" x2="624" y2="121"></line>
+              <line class="chart-grid" x1="96" y1="214" x2="624" y2="214"></line>
+              <line class="chart-grid" x1="96" y1="307" x2="624" y2="307"></line>
+            </g>
+            <line class="chart-axis" x1="96" y1="307" x2="624" y2="307"></line>
+            <line class="chart-axis" x1="96" y1="28" x2="96" y2="307"></line>
+            <g id="chartReferenceLines"></g>
+            <path id="sightPath" class="sight-path" d="M64 121 L576 121"></path>
+            <path id="trajectoryPath" class="trajectory-path" d=""></path>
+            <line id="chartTargetLine" class="chart-marker" x1="64" y1="28" x2="64" y2="214"></line>
+            <circle id="chartTargetDot" class="chart-dot" cx="64" cy="121" r="5"></circle>
+            <text id="chartStartLabel" class="chart-label" x="96" y="331">0m</text>
+            <text id="chartEndLabel" class="chart-label end" x="624" y="331">40m</text>
+          </svg>
+        </div>
+      </section>
+
+      <section class="preview" aria-label="A4 靶紙預覽">
+        <div class="preview-top">
+          <div class="preview-title">A4 靶紙即時縮圖</div>
+          <div class="preview-actions">
+            <button id="exportPdfButton" class="export-btn" type="button">Export to PDF</button>
+            <div class="badge" id="distanceBadge">15 m</div>
+          </div>
+        </div>
+
+        <div class="paper-wrap">
+          <svg id="targetSvg" class="target-svg" viewBox="0 0 210 297" role="img" aria-label="A4 靶紙與預期落點">
+            <rect class="paper" x="0.5" y="0.5" width="209" height="296"></rect>
+            <line class="guide" x1="105" y1="0" x2="105" y2="297"></line>
+            <line class="guide" x1="0" y1="148.5" x2="210" y2="148.5"></line>
+            <g aria-label="靶心每一公分同心圓">
+              <circle class="target-ring" cx="105" cy="148.5" r="10"></circle>
+              <circle class="target-ring" cx="105" cy="148.5" r="20"></circle>
+              <circle class="target-ring" cx="105" cy="148.5" r="30"></circle>
+              <circle class="target-ring" cx="105" cy="148.5" r="40"></circle>
+              <circle class="target-ring" cx="105" cy="148.5" r="50"></circle>
+              <circle class="target-ring" cx="105" cy="148.5" r="60"></circle>
+              <circle class="target-ring" cx="105" cy="148.5" r="70"></circle>
+              <circle class="target-ring" cx="105" cy="148.5" r="80"></circle>
+              <circle class="target-ring" cx="105" cy="148.5" r="90"></circle>
+              <circle class="target-ring" cx="105" cy="148.5" r="100"></circle>
+            </g>
+            <circle class="center-dot" cx="105" cy="148.5" r="8"></circle>
+            <g id="impactGroup">
+              <line id="impactH" class="impact-cross" x1="99" y1="148.5" x2="111" y2="148.5"></line>
+              <line id="impactV" class="impact-cross" x1="105" y1="142.5" x2="105" y2="154.5"></line>
+            </g>
+            <text id="edgeNote" class="edge-note" x="105" y="286" opacity="0">超出紙面</text>
+          </svg>
+        </div>
+
+        <div class="preview-bottom">
+          <span id="impactText">落點：中心</span>
+          <span>A4 210 × 297 mm</span>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const fields = {
+      targetDistance: document.getElementById("targetDistance"),
+      zeroDistance: document.getElementById("zeroDistance"),
+      bbWeight: document.getElementById("bbWeight"),
+      muzzleVelocity: document.getElementById("muzzleVelocity"),
+      sightHeight: document.getElementById("sightHeight"),
+      bbDiameter: document.getElementById("bbDiameter"),
+      hopCompensation: document.getElementById("hopCompensation")
+    };
+
+    const output = {
+      dropValue: document.getElementById("dropValue"),
+      angleValue: document.getElementById("angleValue"),
+      timeValue: document.getElementById("timeValue"),
+      bcValue: document.getElementById("bcValue"),
+      cdValue: document.getElementById("cdValue"),
+      modelValue: document.getElementById("modelValue"),
+      status: document.getElementById("status"),
+      distanceBadge: document.getElementById("distanceBadge"),
+      exportJpegButton: document.getElementById("exportJpegButton"),
+      sightPath: document.getElementById("sightPath"),
+      trajectoryPath: document.getElementById("trajectoryPath"),
+      chartReferenceLines: document.getElementById("chartReferenceLines"),
+      chartTargetLine: document.getElementById("chartTargetLine"),
+      chartTargetDot: document.getElementById("chartTargetDot"),
+      chartTopOffset: document.getElementById("chartTopOffset"),
+      chartTopDistance: document.getElementById("chartTopDistance"),
+      chartMetricTargetDistance: document.getElementById("chartMetricTargetDistance"),
+      chartMetricZeroDistance: document.getElementById("chartMetricZeroDistance"),
+      chartMetricWeight: document.getElementById("chartMetricWeight"),
+      chartMetricVelocity: document.getElementById("chartMetricVelocity"),
+      chartMetricSightHeight: document.getElementById("chartMetricSightHeight"),
+      chartMetricDiameter: document.getElementById("chartMetricDiameter"),
+      chartMetricAngle: document.getElementById("chartMetricAngle"),
+      chartMetricTime: document.getElementById("chartMetricTime"),
+      chartStartLabel: document.getElementById("chartStartLabel"),
+      chartEndLabel: document.getElementById("chartEndLabel"),
+      hopState: document.getElementById("hopState"),
+      exportPdfButton: document.getElementById("exportPdfButton"),
+      impactText: document.getElementById("impactText"),
+      impactH: document.getElementById("impactH"),
+      impactV: document.getElementById("impactV"),
+      edgeNote: document.getElementById("edgeNote")
+    };
+
+    const A4 = {
+      width: 210,
+      height: 297,
+      centerX: 105,
+      centerY: 148.5
+    };
+
+    const AIR_DENSITY = 1.225;
+    const AIR_VISCOSITY = 0.0000181;
+    const GRAVITY = 9.80665;
+    const HOP_SPIN_DECAY_SECONDS = 2.2;
+    const HOP_LIFT_SLOPE = 0.058;
+    const HOP_LIFT_CAP = 0.08;
+    const HOP_SPIN_RATIO_MAX = 0.9;
+    const HOP_OPTIMIZE_SAMPLES = 54;
+    const INCH_TO_M = 0.0254;
+    const MM_TO_PT = 72 / 25.4;
+    let currentTargetOffsetMm = 0;
+
+    function numberOf(input) {
+      return Number.parseFloat(input.value);
+    }
+
+    function readParams() {
+      return {
+        targetDistance: numberOf(fields.targetDistance),
+        zeroDistance: numberOf(fields.zeroDistance),
+        bbWeightKg: numberOf(fields.bbWeight) / 1000,
+        muzzleVelocity: numberOf(fields.muzzleVelocity),
+        sightHeightM: numberOf(fields.sightHeight) * INCH_TO_M,
+        bbDiameterM: numberOf(fields.bbDiameter) / 1000,
+        hopCompensationDone: fields.hopCompensation.checked
+      };
+    }
+
+    function validateParams(p) {
+      const errors = [];
+      if (!(p.targetDistance > 0)) errors.push("靶紙距離需大於 0。");
+      if (!(p.zeroDistance > 0)) errors.push("歸零距離需大於 0。");
+      if (!(p.bbWeightKg > 0)) errors.push("彈丸重量需大於 0。");
+      if (!(p.muzzleVelocity > 0)) errors.push("初速需大於 0。");
+      if (!(p.sightHeightM >= 0)) errors.push("瞄準高度不可小於 0。");
+      if (!(p.bbDiameterM > 0)) errors.push("彈丸直徑需大於 0。");
+      return errors;
+    }
+
+    function sphereCd(speed, diameterM) {
+      const reynolds = Math.max(1, AIR_DENSITY * Math.abs(speed) * diameterM / AIR_VISCOSITY);
+      const viscous = 24 / reynolds * (1 + 0.15 * Math.pow(reynolds, 0.687));
+      const turbulent = 0.42 / (1 + 42500 / Math.pow(reynolds, 1.16));
+      return Math.min(1.2, Math.max(0.18, viscous + turbulent));
+    }
+
+    function hopLiftCoefficient(speed, p, spinSurfaceSpeed) {
+      if (!p.hopCompensationDone || !spinSurfaceSpeed) return 0;
+      const spinRatio = spinSurfaceSpeed / Math.max(1, speed);
+      return Math.min(HOP_LIFT_CAP, Math.max(0, HOP_LIFT_SLOPE * spinRatio));
+    }
+
+    function simulateAt(distanceM, angleRad, p) {
+      const area = Math.PI * Math.pow(p.bbDiameterM / 2, 2);
+      const dt = 0.0008;
+      let x = 0;
+      let y = -p.sightHeightM;
+      let vx = p.muzzleVelocity * Math.cos(angleRad);
+      let vy = p.muzzleVelocity * Math.sin(angleRad);
+      let time = 0;
+      let cdSum = 0;
+      let cdCount = 0;
+      let clSum = 0;
+      let prevX = x;
+      let prevY = y;
+      let prevTime = time;
+      let spinSurfaceSpeed = p.muzzleVelocity * (p.hopSpinRatio || 0);
+
+      for (let i = 0; i < 700000; i += 1) {
+        prevX = x;
+        prevY = y;
+        prevTime = time;
+
+        const speed = Math.hypot(vx, vy);
+        const cd = sphereCd(speed, p.bbDiameterM);
+        const drag = 0.5 * AIR_DENSITY * cd * area * speed * speed / p.bbWeightKg;
+        const cl = hopLiftCoefficient(speed, p, spinSurfaceSpeed);
+        const lift = 0.5 * AIR_DENSITY * cl * area * speed * speed / p.bbWeightKg;
+        const ax = speed > 0 ? -drag * vx / speed : 0;
+        const ay = speed > 0 ? -GRAVITY + lift - drag * vy / speed : -GRAVITY + lift;
+
+        vx += ax * dt;
+        vy += ay * dt;
+        x += vx * dt;
+        y += vy * dt;
+        time += dt;
+        spinSurfaceSpeed *= Math.exp(-dt / HOP_SPIN_DECAY_SECONDS);
+        cdSum += cd;
+        clSum += cl;
+        cdCount += 1;
+
+        if (x >= distanceM) {
+          const ratio = (distanceM - prevX) / Math.max(0.000001, x - prevX);
+          return {
+            y: prevY + (y - prevY) * ratio,
+            time: prevTime + (time - prevTime) * ratio,
+            avgCd: cdSum / cdCount,
+            avgCl: clSum / cdCount
+          };
+        }
+
+        if (x < -1 || y < -20 || time > 8 || vx <= 0) break;
+      }
+
+      return null;
+    }
+
+    function traceTrajectory(maxDistanceM, angleRad, p, sampleCount = 170) {
+      const area = Math.PI * Math.pow(p.bbDiameterM / 2, 2);
+      const dt = 0.0008;
+      const stepM = maxDistanceM / sampleCount;
+      const points = [{ x: 0, y: -p.sightHeightM }];
+      let nextSample = stepM;
+      let x = 0;
+      let y = -p.sightHeightM;
+      let vx = p.muzzleVelocity * Math.cos(angleRad);
+      let vy = p.muzzleVelocity * Math.sin(angleRad);
+      let time = 0;
+      let prevX = x;
+      let prevY = y;
+      let spinSurfaceSpeed = p.muzzleVelocity * (p.hopSpinRatio || 0);
+
+      for (let i = 0; i < 700000; i += 1) {
+        prevX = x;
+        prevY = y;
+
+        const speed = Math.hypot(vx, vy);
+        const cd = sphereCd(speed, p.bbDiameterM);
+        const drag = 0.5 * AIR_DENSITY * cd * area * speed * speed / p.bbWeightKg;
+        const cl = hopLiftCoefficient(speed, p, spinSurfaceSpeed);
+        const lift = 0.5 * AIR_DENSITY * cl * area * speed * speed / p.bbWeightKg;
+        const ax = speed > 0 ? -drag * vx / speed : 0;
+        const ay = speed > 0 ? -GRAVITY + lift - drag * vy / speed : -GRAVITY + lift;
+
+        vx += ax * dt;
+        vy += ay * dt;
+        x += vx * dt;
+        y += vy * dt;
+        time += dt;
+        spinSurfaceSpeed *= Math.exp(-dt / HOP_SPIN_DECAY_SECONDS);
+
+        while (x >= nextSample && nextSample <= maxDistanceM) {
+          const ratio = (nextSample - prevX) / Math.max(0.000001, x - prevX);
+          points.push({
+            x: nextSample,
+            y: prevY + (y - prevY) * ratio
+          });
+          nextSample += stepM;
+        }
+
+        if (x >= maxDistanceM || x < -1 || y < -20 || time > 8 || vx <= 0) break;
+      }
+
+      return points;
+    }
+
+    function solveZeroAngle(p) {
+      let low = -8 * Math.PI / 180;
+      let high = 18 * Math.PI / 180;
+      let lowY = simulateAt(p.zeroDistance, low, p)?.y;
+      let highY = simulateAt(p.zeroDistance, high, p)?.y;
+
+      for (let expand = 0; expand < 8 && !(lowY <= 0 && highY >= 0); expand += 1) {
+        low -= 4 * Math.PI / 180;
+        high += 5 * Math.PI / 180;
+        lowY = simulateAt(p.zeroDistance, low, p)?.y;
+        highY = simulateAt(p.zeroDistance, high, p)?.y;
+      }
+
+      if (!(lowY <= 0 && highY >= 0)) return null;
+
+      for (let i = 0; i < 42; i += 1) {
+        const mid = (low + high) / 2;
+        const midY = simulateAt(p.zeroDistance, mid, p)?.y;
+        if (midY === null || Number.isNaN(midY)) return null;
+        if (midY < 0) {
+          low = mid;
+        } else {
+          high = mid;
+        }
+      }
+
+      return (low + high) / 2;
+    }
+
+    function solveHopSpinRatio(p, angleRad) {
+      let low = 0;
+      let high = HOP_SPIN_RATIO_MAX;
+      const originalSpinRatio = p.hopSpinRatio || 0;
+      p.hopSpinRatio = low;
+      const lowY = simulateAt(p.zeroDistance, angleRad, p)?.y;
+      p.hopSpinRatio = high;
+      const highY = simulateAt(p.zeroDistance, angleRad, p)?.y;
+      p.hopSpinRatio = originalSpinRatio;
+
+      if (!(lowY <= 0 && highY >= 0)) return null;
+
+      for (let i = 0; i < 42; i += 1) {
+        const mid = (low + high) / 2;
+        p.hopSpinRatio = mid;
+        const midY = simulateAt(p.zeroDistance, angleRad, p)?.y;
+        if (midY === null || Number.isNaN(midY)) {
+          p.hopSpinRatio = originalSpinRatio;
+          return null;
+        }
+        if (midY < 0) {
+          low = mid;
+        } else {
+          high = mid;
+        }
+      }
+
+      p.hopSpinRatio = originalSpinRatio;
+      return (low + high) / 2;
+    }
+
+    function scoreHopFlatness(points) {
+      const heightsMm = points.map((point) => point.y * 1000);
+      const maxHigh = Math.max(...heightsMm);
+      const maxLow = Math.min(...heightsMm);
+      const maxAbs = Math.max(Math.abs(maxHigh), Math.abs(maxLow));
+      const rms = Math.sqrt(heightsMm.reduce((sum, height) => sum + height * height, 0) / heightsMm.length);
+      const overhopPenalty = Math.max(0, maxHigh - Math.abs(maxLow)) * 0.4;
+
+      return {
+        score: maxAbs + rms * 0.28 + overhopPenalty,
+        maxHigh,
+        maxLow,
+        rms
+      };
+    }
+
+    function evaluateHopSpinRatio(p, spinRatio) {
+      const originalSpinRatio = p.hopSpinRatio || 0;
+      p.hopSpinRatio = spinRatio;
+      const angle = solveZeroAngle(p);
+      if (angle === null) {
+        p.hopSpinRatio = originalSpinRatio;
+        return null;
+      }
+
+      const points = traceTrajectory(p.zeroDistance, angle, p, HOP_OPTIMIZE_SAMPLES);
+      const flatness = scoreHopFlatness(points);
+      p.hopSpinRatio = originalSpinRatio;
+
+      return {
+        spinRatio,
+        angle,
+        points,
+        ...flatness
+      };
+    }
+
+    function solveFlatHopFiringSolution(p) {
+      let best = null;
+      const coarseSteps = 30;
+
+      for (let i = 0; i <= coarseSteps; i += 1) {
+        const spinRatio = HOP_SPIN_RATIO_MAX * i / coarseSteps;
+        const candidate = evaluateHopSpinRatio(p, spinRatio);
+        if (candidate && (!best || candidate.score < best.score)) {
+          best = candidate;
+        }
+      }
+
+      if (!best) return null;
+
+      const refineWidth = HOP_SPIN_RATIO_MAX / coarseSteps;
+      const low = Math.max(0, best.spinRatio - refineWidth);
+      const high = Math.min(HOP_SPIN_RATIO_MAX, best.spinRatio + refineWidth);
+      const refineSteps = 24;
+
+      for (let i = 0; i <= refineSteps; i += 1) {
+        const spinRatio = low + (high - low) * i / refineSteps;
+        const candidate = evaluateHopSpinRatio(p, spinRatio);
+        if (candidate && candidate.score < best.score) {
+          best = candidate;
+        }
+      }
+
+      p.hopSpinRatio = best.spinRatio;
+      return {
+        angle: best.angle,
+        hopMode: "flat",
+        maxHighMm: best.maxHigh,
+        maxLowMm: best.maxLow,
+        rmsMm: best.rms
+      };
+    }
+
+    function solveFiringSolution(p) {
+      if (p.hopCompensationDone) {
+        const flatSolution = solveFlatHopFiringSolution(p);
+        if (flatSolution) return flatSolution;
+      }
+
+      p.hopSpinRatio = 0;
+      const angle = solveZeroAngle(p);
+      if (angle === null) return null;
+
+      return {
+        angle,
+        hopMode: p.hopCompensationDone ? "fallback" : "off"
+      };
+    }
+
+    function formatMm(mm) {
+      if (Math.abs(mm) < 0.5) return "0 mm";
+      return `${mm > 0 ? "+" : ""}${mm.toFixed(Math.abs(mm) >= 100 ? 0 : 1)} mm`;
+    }
+
+    function formatPlain(value, digits = 2) {
+      if (!Number.isFinite(value)) return "-";
+      return Number(value.toFixed(digits)).toString();
+    }
+
+    function formatMeters(value) {
+      return `${formatPlain(value, value >= 50 ? 0 : 1)}m`;
+    }
+
+    function formatImpact(mm) {
+      if (Math.abs(mm) < 0.5) return "中心";
+      return mm > 0 ? `高 ${Math.abs(mm).toFixed(1)} mm` : `低 ${Math.abs(mm).toFixed(1)} mm`;
+    }
+
+    function moveImpact(offsetMm) {
+      const unclampedY = A4.centerY - offsetMm;
+      const y = clampImpactY(unclampedY);
+      const outOfPaper = unclampedY !== y;
+      const x = A4.centerX;
+
+      output.impactH.setAttribute("x1", x - 6);
+      output.impactH.setAttribute("x2", x + 6);
+      output.impactH.setAttribute("y1", y);
+      output.impactH.setAttribute("y2", y);
+      output.impactV.setAttribute("x1", x);
+      output.impactV.setAttribute("x2", x);
+      output.impactV.setAttribute("y1", y - 6);
+      output.impactV.setAttribute("y2", y + 6);
+      output.edgeNote.setAttribute("opacity", outOfPaper ? "1" : "0");
+      output.edgeNote.setAttribute("y", offsetMm > 0 ? "18" : "286");
+    }
+
+    function clampImpactY(yMm) {
+      return Math.max(13, Math.min(A4.height - 13, yMm));
+    }
+
+    function escapeXml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function buildHorizontalReferenceLines(referenceValues, bounds, yOf) {
+      const seen = new Set();
+      return referenceValues
+        .map((item) => {
+          const y = yOf(item.heightMm);
+          if (y < bounds.top || y > bounds.bottom) return "";
+          const key = Math.round(y);
+          if (seen.has(key)) return "";
+          seen.add(key);
+          const labelY = Math.max(bounds.top + 10, Math.min(bounds.bottom - 4, y - 3));
+          return [
+            `<line class="chart-reference-line" x1="${bounds.left}" y1="${y.toFixed(1)}" x2="${bounds.right}" y2="${y.toFixed(1)}"></line>`,
+            `<text class="chart-reference-label" x="${bounds.left - 8}" y="${labelY.toFixed(1)}">${escapeXml(item.label)}</text>`
+          ].join("");
+        })
+        .join("");
+    }
+
+    function renderTrajectoryChart(points, p, targetOffsetMm) {
+      const bounds = {
+        left: 96,
+        right: 624,
+        top: 28,
+        bottom: 307
+      };
+      const width = bounds.right - bounds.left;
+      const maxDistance = Math.max(1, points[points.length - 1]?.x ?? p.targetDistance);
+      const yValues = points.map((point) => point.y * 1000).concat([0, targetOffsetMm]);
+      const zeroRangeValues = points
+        .filter((point) => point.x <= p.zeroDistance)
+        .map((point) => point.y * 1000)
+        .concat([0]);
+      const trajectoryHighMm = Math.max(...zeroRangeValues);
+      const trajectoryLowMm = Math.min(...zeroRangeValues);
+      const trajectorySpanMm = trajectoryHighMm - trajectoryLowMm;
+      const chartHighMm = Math.max(...yValues);
+      const naturalLowMm = Math.min(...yValues);
+      const minReferenceLowMm = Math.floor(naturalLowMm / 50) * 50;
+      const chartLowMm = Math.min(naturalLowMm, minReferenceLowMm, -100);
+      const chartPaddingMm = Math.max(8, (chartHighMm - chartLowMm) * 0.06);
+      const yMaxMm = chartHighMm + chartPaddingMm;
+      const yMinMm = chartLowMm - chartPaddingMm * 0.45;
+      const yRangeMm = Math.max(1, yMaxMm - yMinMm);
+      const xOf = (distanceM) => bounds.left + distanceM / maxDistance * width;
+      const yOf = (heightMm) => bounds.top + (yMaxMm - heightMm) / yRangeMm * (bounds.bottom - bounds.top);
+      const path = points.map((point, index) => {
+        const x = xOf(point.x);
+        const y = yOf(point.y * 1000);
+        return `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
+      }).join(" ");
+      const targetX = xOf(Math.min(p.targetDistance, maxDistance));
+      const targetY = yOf(targetOffsetMm);
+      const bullet0HeightMm = points[0]?.y * 1000 ?? -p.sightHeightM * 1000;
+      const maxChartHeightMm = Math.max(...points.map((point) => point.y * 1000));
+      const referenceValues = [
+        { heightMm: bullet0HeightMm, label: `0m 彈高 ${formatMm(bullet0HeightMm)}` },
+        { heightMm: targetOffsetMm, label: `靶距 ${formatMm(targetOffsetMm)}` },
+        { heightMm: maxChartHeightMm, label: `最高點 ${formatMm(maxChartHeightMm)}` }
+      ];
+
+      for (let heightMm = -100; yOf(heightMm) <= bounds.bottom; heightMm -= 50) {
+        if (yOf(heightMm) >= bounds.top) {
+          referenceValues.push({ heightMm, label: `${heightMm}mm` });
+        }
+      }
+
+      const sightY = yOf(0);
+      output.sightPath.setAttribute("d", `M${bounds.left} ${sightY} L${bounds.right} ${sightY}`);
+      output.chartReferenceLines.innerHTML = buildHorizontalReferenceLines(referenceValues, bounds, yOf);
+      output.trajectoryPath.setAttribute("d", path);
+      output.chartTargetLine.setAttribute("x1", targetX);
+      output.chartTargetLine.setAttribute("x2", targetX);
+      output.chartTargetLine.setAttribute("y1", bounds.top);
+      output.chartTargetLine.setAttribute("y2", bounds.bottom);
+      output.chartTargetDot.setAttribute("cx", targetX);
+      output.chartTargetDot.setAttribute("cy", targetY);
+      output.chartTopOffset.textContent = `${trajectorySpanMm.toFixed(trajectorySpanMm >= 100 ? 0 : 1)} mm`;
+      output.chartTopDistance.textContent = `${Math.abs(targetOffsetMm).toFixed(Math.abs(targetOffsetMm) >= 100 ? 0 : 1)} mm`;
+      output.chartStartLabel.textContent = "0m";
+      output.chartEndLabel.textContent = formatMeters(maxDistance);
+    }
+
+    function setStatus(message, ok) {
+      output.status.textContent = message;
+      output.status.classList.toggle("ok", ok);
+    }
+
+    function pdfX(mm) {
+      return (mm * MM_TO_PT).toFixed(3);
+    }
+
+    function pdfY(mm) {
+      return ((A4.height - mm) * MM_TO_PT).toFixed(3);
+    }
+
+    function pdfCirclePath(cxMm, cyMm, rMm) {
+      const cx = cxMm * MM_TO_PT;
+      const cy = (A4.height - cyMm) * MM_TO_PT;
+      const r = rMm * MM_TO_PT;
+      const c = r * 0.5522847498;
+      return [
+        `${(cx + r).toFixed(3)} ${cy.toFixed(3)} m`,
+        `${(cx + r).toFixed(3)} ${(cy + c).toFixed(3)} ${(cx + c).toFixed(3)} ${(cy + r).toFixed(3)} ${cx.toFixed(3)} ${(cy + r).toFixed(3)} c`,
+        `${(cx - c).toFixed(3)} ${(cy + r).toFixed(3)} ${(cx - r).toFixed(3)} ${(cy + c).toFixed(3)} ${(cx - r).toFixed(3)} ${cy.toFixed(3)} c`,
+        `${(cx - r).toFixed(3)} ${(cy - c).toFixed(3)} ${(cx - c).toFixed(3)} ${(cy - r).toFixed(3)} ${cx.toFixed(3)} ${(cy - r).toFixed(3)} c`,
+        `${(cx + c).toFixed(3)} ${(cy - r).toFixed(3)} ${(cx + r).toFixed(3)} ${(cy - c).toFixed(3)} ${(cx + r).toFixed(3)} ${cy.toFixed(3)} c`
+      ].join("\n");
+    }
+
+    function buildTargetPdfBlob() {
+      const pageW = A4.width * MM_TO_PT;
+      const pageH = A4.height * MM_TO_PT;
+      const impactY = clampImpactY(A4.centerY - currentTargetOffsetMm);
+      const commands = [
+        "q",
+        "1 1 1 rg",
+        `0 0 ${pageW.toFixed(3)} ${pageH.toFixed(3)} re f`,
+        "0 G 0 g",
+        `${(0.35 * MM_TO_PT).toFixed(3)} w`,
+        `0 0 ${pageW.toFixed(3)} ${pageH.toFixed(3)} re S`,
+        "0.84 G",
+        `${(0.25 * MM_TO_PT).toFixed(3)} w`,
+        `${pdfX(A4.centerX)} ${pdfY(0)} m ${pdfX(A4.centerX)} ${pdfY(A4.height)} l S`,
+        `${pdfX(0)} ${pdfY(A4.centerY)} m ${pdfX(A4.width)} ${pdfY(A4.centerY)} l S`,
+        "0 G",
+        `${(0.35 * MM_TO_PT).toFixed(3)} w`,
+        ...Array.from({ length: 10 }, (_, index) => `${pdfCirclePath(A4.centerX, A4.centerY, (index + 1) * 10)}\nS`),
+        "0 g",
+        `${pdfCirclePath(A4.centerX, A4.centerY, 8)}\nf`,
+        "0 G",
+        `${(0.75 * MM_TO_PT).toFixed(3)} w`,
+        `${pdfX(A4.centerX - 6)} ${pdfY(impactY)} m ${pdfX(A4.centerX + 6)} ${pdfY(impactY)} l S`,
+        `${pdfX(A4.centerX)} ${pdfY(impactY - 6)} m ${pdfX(A4.centerX)} ${pdfY(impactY + 6)} l S`,
+        "Q"
+      ];
+      const content = commands.join("\n");
+      const objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW.toFixed(3)} ${pageH.toFixed(3)}] /Contents 4 0 R >>`,
+        `<< /Length ${content.length} >>\nstream\n${content}\nendstream`
+      ];
+      let pdf = "%PDF-1.4\n";
+      const offsets = [0];
+      objects.forEach((object, index) => {
+        offsets.push(pdf.length);
+        pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+      });
+      const xrefOffset = pdf.length;
+      pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+      offsets.slice(1).forEach((offset) => {
+        pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+      });
+      pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+      return new Blob([pdf], { type: "application/pdf" });
+    }
+
+    async function exportTargetPdf() {
+      output.exportPdfButton.classList.add("active");
+      const blob = buildTargetPdfBlob();
+      const fileName = `gbullet-target-${new Date().toISOString().slice(0, 10)}.pdf`;
+
+      try {
+        if ("showSaveFilePicker" in window) {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: fileName,
+            types: [{
+              description: "PDF file",
+              accept: { "application/pdf": [".pdf"] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+        } else {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = fileName;
+          link.click();
+          URL.revokeObjectURL(url);
+        }
+      } catch (error) {
+        if (error?.name !== "AbortError") {
+          setStatus("PDF 匯出失敗，請再試一次。", false);
+        }
+      } finally {
+        setTimeout(() => output.exportPdfButton.classList.remove("active"), 180);
+      }
+    }
+
+    function getChartExportMetrics() {
+      return [
+        ["高低差", output.chartTopOffset.textContent],
+        ["離靶心", output.chartTopDistance.textContent],
+        ["靶紙距離", output.chartMetricTargetDistance.textContent],
+        ["歸零距離", output.chartMetricZeroDistance.textContent],
+        ["彈丸重量", output.chartMetricWeight.textContent],
+        ["初速", output.chartMetricVelocity.textContent],
+        ["瞄準高度", output.chartMetricSightHeight.textContent],
+        ["彈丸直徑", output.chartMetricDiameter.textContent],
+        ["槍管仰角", output.chartMetricAngle.textContent],
+        ["到靶時間", output.chartMetricTime.textContent]
+      ];
+    }
+
+    function serializeChartSvg() {
+      const svg = document.querySelector(".chart-svg").cloneNode(true);
+      const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+      style.textContent = `
+        .chart-bg{fill:#fff;stroke:#cfd5cf;stroke-width:1}
+        .chart-grid{stroke:#e1e6e1;stroke-width:1}
+        .chart-axis{stroke:#929c96;stroke-width:1.2}
+        .chart-reference-line{stroke:#050505;stroke-width:.75;stroke-dasharray:4 5;opacity:.72}
+        .chart-reference-label{fill:#050505;font-size:10px;font-family:Arial,sans-serif;text-anchor:end}
+        .sight-path{stroke:#c33b34;stroke-width:2.5;stroke-dasharray:9 7;fill:none}
+        .trajectory-path{stroke:#248b57;stroke-width:3;stroke-dasharray:8 6;fill:none}
+        .chart-marker{stroke:#262b28;stroke-width:1.4;stroke-dasharray:4 5}
+        .chart-dot{fill:#050505;stroke:#fff;stroke-width:2}
+        .chart-label{fill:#66706b;font-size:12px;font-family:Arial,sans-serif}
+        .chart-label.end{text-anchor:end}
+      `;
+      svg.insertBefore(style, svg.firstChild);
+      svg.setAttribute("width", "1120");
+      svg.setAttribute("height", "612");
+      return new XMLSerializer().serializeToString(svg);
+    }
+
+    function loadSvgImage(svgText) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText)}`;
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = url;
+      });
+    }
+
+    async function buildChartJpegBlob() {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1400;
+      canvas.height = 1080;
+      const ctx = canvas.getContext("2d");
+      const metrics = getChartExportMetrics();
+      const chartImage = await loadSvgImage(serializeChartSvg());
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#1d211f";
+      ctx.font = "700 34px Arial, sans-serif";
+      ctx.fillText("視線與彈道 vs 距離", 70, 70);
+
+      ctx.font = "14px Arial, sans-serif";
+      ctx.strokeStyle = "#c33b34";
+      ctx.setLineDash([14, 10]);
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(1010, 58);
+      ctx.lineTo(1072, 58);
+      ctx.stroke();
+      ctx.setLineDash([12, 9]);
+      ctx.strokeStyle = "#248b57";
+      ctx.beginPath();
+      ctx.moveTo(1134, 58);
+      ctx.lineTo(1196, 58);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#66706b";
+      ctx.fillText("視線", 1082, 63);
+      ctx.fillText("彈道", 1206, 63);
+
+      const startX = 70;
+      const startY = 108;
+      const boxW = 246;
+      const boxH = 64;
+      const gap = 16;
+      metrics.forEach(([label, value], index) => {
+        const col = index % 5;
+        const row = Math.floor(index / 5);
+        const x = startX + col * (boxW + gap);
+        const y = startY + row * (boxH + gap);
+        ctx.fillStyle = "#fbfcfb";
+        ctx.strokeStyle = "#d9ded9";
+        ctx.lineWidth = 2;
+        ctx.fillRect(x, y, boxW, boxH);
+        ctx.strokeRect(x, y, boxW, boxH);
+        ctx.fillStyle = "#66706b";
+        ctx.font = "18px Arial, sans-serif";
+        ctx.fillText(label, x + 16, y + 24);
+        ctx.fillStyle = "#1d211f";
+        ctx.font = "700 25px Arial, sans-serif";
+        ctx.fillText(value, x + 16, y + 52);
+      });
+
+      ctx.drawImage(chartImage, 70, 300, 1260, 690);
+
+      return await new Promise((resolve) => {
+        canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.92);
+      });
+    }
+
+    async function exportChartJpeg() {
+      output.exportJpegButton.classList.add("active");
+      const fileName = `gbullet-trajectory-${new Date().toISOString().slice(0, 10)}.jpg`;
+
+      try {
+        const blob = await buildChartJpegBlob();
+        if ("showSaveFilePicker" in window) {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: fileName,
+            types: [{
+              description: "JPEG image",
+              accept: { "image/jpeg": [".jpg", ".jpeg"] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+        } else {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = fileName;
+          link.click();
+          URL.revokeObjectURL(url);
+        }
+      } catch (error) {
+        if (error?.name !== "AbortError") {
+          setStatus("JPEG 匯出失敗，請再試一次。", false);
+        }
+      } finally {
+        setTimeout(() => output.exportJpegButton.classList.remove("active"), 180);
+      }
+    }
+
+    function calculate() {
+      const p = readParams();
+      const errors = validateParams(p);
+      output.distanceBadge.textContent = `${Number.isFinite(p.targetDistance) ? p.targetDistance : "-"} m`;
+      output.hopState.textContent = p.hopCompensationDone ? "Done" : "Not Done";
+
+      if (errors.length > 0) {
+        clearComputedResults();
+        setStatus(errors.join(" "), false);
+        return;
+      }
+
+      const firingSolution = solveFiringSolution(p);
+      if (firingSolution === null) {
+        clearComputedResults();
+        setStatus("目前參數無法在歸零距離形成有效交點，請提高初速或縮短距離。", false);
+        return;
+      }
+      const angle = firingSolution.angle;
+
+      const target = simulateAt(p.targetDistance, angle, p);
+      if (!target) {
+        clearComputedResults();
+        setStatus("目前參數無法計算到靶紙距離，請檢查距離或初速。", false);
+        return;
+      }
+
+      const area = Math.PI * Math.pow(p.bbDiameterM / 2, 2);
+      const ballisticCoefficient = p.bbWeightKg / (target.avgCd * area);
+      const offsetMm = target.y * 1000;
+      const chartMaxDistance = Math.max(p.targetDistance, p.zeroDistance, 40);
+      const trajectoryPoints = traceTrajectory(chartMaxDistance, angle, p);
+      currentTargetOffsetMm = offsetMm;
+
+      output.dropValue.textContent = formatMm(offsetMm);
+      output.angleValue.textContent = `${(angle * 180 / Math.PI).toFixed(3)} deg`;
+      output.timeValue.textContent = `${(target.time * 1000).toFixed(0)} ms`;
+      output.bcValue.textContent = `${ballisticCoefficient.toFixed(2)} kg/m²`;
+      output.cdValue.textContent = `Cd ${target.avgCd.toFixed(3)}`;
+      output.chartMetricTargetDistance.textContent = `${formatPlain(p.targetDistance, 1)} m`;
+      output.chartMetricZeroDistance.textContent = `${formatPlain(p.zeroDistance, 1)} m`;
+      output.chartMetricWeight.textContent = `${formatPlain(p.bbWeightKg * 1000, 2)} g`;
+      output.chartMetricVelocity.textContent = `${formatPlain(p.muzzleVelocity, 1)} m/s`;
+      output.chartMetricSightHeight.textContent = `${formatPlain(p.sightHeightM / INCH_TO_M, 2)} in`;
+      output.chartMetricDiameter.textContent = `${formatPlain(p.bbDiameterM * 1000, 2)} mm`;
+      output.chartMetricAngle.textContent = `${(angle * 180 / Math.PI).toFixed(3)} deg`;
+      output.chartMetricTime.textContent = `${(target.time * 1000).toFixed(0)} ms`;
+      output.modelValue.textContent = describeModel(p, target, firingSolution);
+      output.impactText.textContent = `落點：${formatImpact(offsetMm)}`;
+      renderTrajectoryChart(trajectoryPoints, p, offsetMm);
+      moveImpact(offsetMm);
+      setStatus(`參數有效；HOP ${p.hopCompensationDone ? "Done" : "Not Done"}；高於靶心為正值，低於靶心為負值。`, true);
+    }
+
+    function describeModel(p, target, firingSolution) {
+      if (!p.hopCompensationDone) {
+        return "球形 BB：Cd(Re) 二次阻力 + 重力，未套用 HOP 升力";
+      }
+
+      if (firingSolution.hopMode === "flat") {
+        return `球形 BB：Cd(Re) 二次阻力 + HOP 平直彈道最佳化，avg CL ${target.avgCl.toFixed(3)}`;
+      }
+
+      return "球形 BB：Cd(Re) 二次阻力；HOP 無有效自動解，改用無 HOP 歸零角";
+    }
+
+    function clearComputedResults() {
+      output.dropValue.textContent = "-";
+      output.angleValue.textContent = "-";
+      output.timeValue.textContent = "-";
+      output.bcValue.textContent = "-";
+      output.cdValue.textContent = "-";
+      output.modelValue.textContent = "球形 BB Cd(Re) 數值積分";
+      output.chartMetricTargetDistance.textContent = "-";
+      output.chartMetricZeroDistance.textContent = "-";
+      output.chartMetricWeight.textContent = "-";
+      output.chartMetricVelocity.textContent = "-";
+      output.chartMetricSightHeight.textContent = "-";
+      output.chartMetricDiameter.textContent = "-";
+      output.chartMetricAngle.textContent = "-";
+      output.chartMetricTime.textContent = "-";
+      output.trajectoryPath.setAttribute("d", "");
+      output.chartReferenceLines.innerHTML = "";
+      output.chartTargetDot.setAttribute("cx", "64");
+      output.chartTargetDot.setAttribute("cy", "121");
+      output.chartTargetLine.setAttribute("x1", "64");
+      output.chartTargetLine.setAttribute("x2", "64");
+      output.chartTopOffset.textContent = "-";
+      output.chartTopDistance.textContent = "-";
+    }
+
+    Object.values(fields).forEach((field) => {
+      field.addEventListener("input", calculate);
+    });
+    output.exportJpegButton.addEventListener("click", exportChartJpeg);
+    output.exportPdfButton.addEventListener("click", exportTargetPdf);
+
+    calculate();
+  </script>
+</body>
+</html>
