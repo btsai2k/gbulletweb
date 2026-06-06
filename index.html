@@ -40,7 +40,8 @@
 
     .controls,
     .chart,
-    .preview {
+    .preview,
+    .mpbr {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -260,7 +261,7 @@
       min-width: 0;
       min-height: 0;
       display: grid;
-      grid-template-rows: auto auto;
+      grid-template-rows: auto auto auto;
       align-content: start;
       gap: 18px;
     }
@@ -540,7 +541,7 @@
       }
 
       .visuals {
-        grid-template-rows: auto auto;
+        grid-template-rows: auto auto auto;
       }
 
       .target-svg {
@@ -548,6 +549,87 @@
         max-width: 100%;
         max-height: 68vh;
       }
+    }
+
+    .mpbr {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto auto auto auto;
+      overflow: hidden;
+    }
+
+    .mpbr-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .mpbr-title {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .mpbr-note {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12.5px;
+      line-height: 1.45;
+    }
+
+    .mpbr-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .mpbr-table th,
+    .mpbr-table td {
+      padding: 9px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+
+    .mpbr-table th {
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--muted);
+    }
+
+    .mpbr-table td {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .mpbr-table .mpbr-tol {
+      font-weight: 600;
+    }
+
+    .mpbr-table .mpbr-band {
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .mpbr-table .mpbr-over {
+      color: var(--warn);
+    }
+
+    .mpbr-table .mpbr-empty {
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .mpbr-summary {
+      padding: 11px 16px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--ink);
+      background: #f3f7f4;
+      min-height: 20px;
     }
   </style>
 </head>
@@ -587,7 +669,7 @@
         <label>
           初速
           <span class="field">
-            <input id="muzzleVelocity" type="number" min="20" max="220" step="1" value="100" inputmode="decimal">
+            <input id="muzzleVelocity" type="number" min="20" max="220" step="1" value="110" inputmode="decimal">
             <span class="unit">m/s</span>
           </span>
         </label>
@@ -685,7 +767,7 @@
             </div>
             <div class="chart-stat">
               <span>初速</span>
-              <strong id="chartMetricVelocity">100 m/s</strong>
+              <strong id="chartMetricVelocity">110 m/s</strong>
             </div>
             <div class="chart-stat">
               <span>瞄準高度</span>
@@ -772,6 +854,30 @@
           <span>A4 210 × 297 mm</span>
         </div>
       </section>
+
+      <section class="mpbr" aria-label="最大點放射程 MPBR">
+        <div class="mpbr-top">
+          <div class="mpbr-title">MPBR 最大點放射程（免補償）</div>
+          <div class="badge" id="mpbrStatus">—</div>
+        </div>
+        <div class="mpbr-note" id="mpbrNote">
+          固定目前彈重 / 初速 / 瞄準高度 / HOP，掃描歸零距離，找出彈道始終落在容許半徑內、可直接瞄準命中的最大射程區間。
+        </div>
+        <table class="mpbr-table">
+          <thead>
+            <tr>
+              <th>容許半徑</th>
+              <th>最佳歸零</th>
+              <th>免補償命中區間</th>
+              <th>彈道峰值</th>
+            </tr>
+          </thead>
+          <tbody id="mpbrBody">
+            <tr><td class="mpbr-empty" colspan="4">計算中…</td></tr>
+          </tbody>
+        </table>
+        <div class="mpbr-summary" id="mpbrSummary"></div>
+      </section>
     </div>
   </main>
 
@@ -818,7 +924,10 @@
       impactText: document.getElementById("impactText"),
       impactH: document.getElementById("impactH"),
       impactV: document.getElementById("impactV"),
-      edgeNote: document.getElementById("edgeNote")
+      edgeNote: document.getElementById("edgeNote"),
+      mpbrStatus: document.getElementById("mpbrStatus"),
+      mpbrBody: document.getElementById("mpbrBody"),
+      mpbrSummary: document.getElementById("mpbrSummary")
     };
 
     const A4 = {
@@ -839,6 +948,25 @@
     const INCH_TO_M = 0.0254;
     const MM_TO_PT = 72 / 25.4;
     let currentTargetOffsetMm = 0;
+
+    // MPBR (maximum point-blank range) sweep settings.
+    const MPBR_TOLERANCES_MM = [15, 25, 40];
+    const MPBR_ZERO_MIN_M = 12;
+    const MPBR_ZERO_MAX_M = 55;
+    const MPBR_ZERO_STEP_M = 1;
+    const MPBR_MAX_RANGE_M = 85;
+    const MPBR_RANGE_STEP_M = 0.5;
+    let mpbrRunToken = 0;
+
+    const scheduleFrame = (typeof requestAnimationFrame === "function")
+      ? (cb) => requestAnimationFrame(cb)
+      : (cb) => setTimeout(cb, 16);
+
+    function nowMs() {
+      return (typeof performance !== "undefined" && performance.now)
+        ? performance.now()
+        : Date.now();
+    }
 
     function numberOf(input) {
       return Number.parseFloat(input.value);
@@ -1518,6 +1646,125 @@
       }
     }
 
+    // Build one firing solution + sampled trajectory for a candidate zero,
+    // mirroring mpbr.py's build_profile. Each candidate gets its own flat-hop
+    // optimization, so the report matches the chart's physics exactly.
+    function mpbrBuildProfile(baseP, zeroDistance) {
+      const p = { ...baseP, zeroDistance, hopSpinRatio: 0 };
+      const solution = solveFiringSolution(p);
+      if (!solution) return null;
+      const sampleCount = Math.max(1, Math.round(MPBR_MAX_RANGE_M / MPBR_RANGE_STEP_M));
+      const points = traceTrajectory(MPBR_MAX_RANGE_M, solution.angle, p, sampleCount);
+      const ys = [];
+      for (const point of points) {
+        if (point.x > 0) ys.push({ d: point.x, y: point.y * 1000 });
+      }
+      return { zeroDistance, ys };
+    }
+
+    // Contiguous no-holdover band where |y| <= tolerance, plus the global peak.
+    function mpbrWindow(profile, tolMm) {
+      let peak = -Infinity;
+      let peakD = null;
+      for (const s of profile.ys) {
+        if (s.y > peak) { peak = s.y; peakD = s.d; }
+      }
+      const over = peak > tolMm + 0.01;
+
+      let near = null;
+      let far = null;
+      let started = false;
+      for (const s of profile.ys) {
+        if (s.y >= -tolMm) {
+          if (near === null) near = s.d;
+          far = s.d;
+          started = true;
+        } else if (started) {
+          break;
+        }
+      }
+      return { near, far, peak, peakD, over };
+    }
+
+    function renderMpbr(results, done, processed, total) {
+      const rows = results.map((r) => {
+        if (!r.best) {
+          const msg = done ? "掃描範圍內無合適歸零" : "計算中…";
+          return `<tr><td class="mpbr-tol">±${r.tol} mm</td>`
+            + `<td class="mpbr-over" colspan="3">${msg}</td></tr>`;
+        }
+        const b = r.best;
+        const band = `${formatPlain(b.near, 1)} – ${formatPlain(b.far, 1)} m`;
+        const peak = `+${formatPlain(b.peak, 1)} mm @ ${formatPlain(b.peakD, 1)} m`;
+        return `<tr><td class="mpbr-tol">±${r.tol} mm</td>`
+          + `<td>${formatPlain(b.z, 1)} m</td>`
+          + `<td class="mpbr-band">${band}</td>`
+          + `<td>${peak}</td></tr>`;
+      }).join("");
+      output.mpbrBody.innerHTML = rows;
+      output.mpbrStatus.textContent = done
+        ? "即時"
+        : `計算中 ${Math.round(processed / Math.max(1, total) * 100)}%`;
+
+      const mid = results.find((r) => r.tol === 25) || results[0];
+      if (mid && mid.best) {
+        const b = mid.best;
+        output.mpbrSummary.textContent =
+          `建議：±${mid.tol} mm 命中半徑下，歸零 ${formatPlain(b.z, 1)} m，`
+          + `${formatPlain(b.near, 1)}–${formatPlain(b.far, 1)} m 內可直接瞄準命中`
+          + `（彈道峰值 +${formatPlain(b.peak, 1)} mm @ ${formatPlain(b.peakD, 1)} m）。`;
+      } else if (done) {
+        output.mpbrSummary.textContent = "目前設定在掃描範圍內找不到合適的免補償歸零，請提高初速或調整彈重。";
+      } else {
+        output.mpbrSummary.textContent = "";
+      }
+    }
+
+    function clearMpbr() {
+      mpbrRunToken += 1;
+      output.mpbrBody.innerHTML = '<tr><td class="mpbr-empty" colspan="4">—</td></tr>';
+      output.mpbrStatus.textContent = "—";
+      output.mpbrSummary.textContent = "";
+    }
+
+    // Time-budgeted, cancelable sweep: process candidate zeros across animation
+    // frames so the report fills in live without blocking input/rendering.
+    function scheduleMpbr(baseP) {
+      const token = ++mpbrRunToken;
+      const snapshot = { ...baseP };
+      const zeros = [];
+      for (let z = MPBR_ZERO_MIN_M; z <= MPBR_ZERO_MAX_M + 1e-9; z += MPBR_ZERO_STEP_M) {
+        zeros.push(Math.round(z * 100) / 100);
+      }
+      const results = MPBR_TOLERANCES_MM.map((tol) => ({ tol, best: null }));
+      let idx = 0;
+      output.mpbrStatus.textContent = "計算中…";
+
+      function tick() {
+        if (token !== mpbrRunToken) return;
+        const start = nowMs();
+        while (idx < zeros.length) {
+          const profile = mpbrBuildProfile(snapshot, zeros[idx]);
+          idx += 1;
+          if (profile) {
+            for (const r of results) {
+              const w = mpbrWindow(profile, r.tol);
+              if (w.over || w.far === null) continue;
+              if (!r.best || w.far > r.best.far) {
+                r.best = { z: profile.zeroDistance, near: w.near, far: w.far, peak: w.peak, peakD: w.peakD };
+              }
+            }
+          }
+          if (nowMs() - start > 12) break;
+        }
+        const done = idx >= zeros.length;
+        renderMpbr(results, done, idx, zeros.length);
+        if (!done && token === mpbrRunToken) scheduleFrame(tick);
+      }
+
+      scheduleFrame(tick);
+    }
+
     function calculate() {
       const p = readParams();
       const errors = validateParams(p);
@@ -1570,6 +1817,7 @@
       renderTrajectoryChart(trajectoryPoints, p, offsetMm);
       moveImpact(offsetMm);
       setStatus(`參數有效；HOP ${p.hopCompensationDone ? "Done" : "Not Done"}；高於靶心為正值，低於靶心為負值。`, true);
+      scheduleMpbr(p);
     }
 
     function describeModel(p, target, firingSolution) {
@@ -1607,6 +1855,7 @@
       output.chartTargetLine.setAttribute("x2", "64");
       output.chartTopOffset.textContent = "-";
       output.chartTopDistance.textContent = "-";
+      clearMpbr();
     }
 
     Object.values(fields).forEach((field) => {
