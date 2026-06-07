@@ -869,6 +869,7 @@
               <th>容許半徑</th>
               <th>最佳歸零</th>
               <th>免補償命中區間</th>
+              <th>區間總長</th>
               <th>彈道峰值</th>
             </tr>
           </thead>
@@ -950,7 +951,7 @@
     let currentTargetOffsetMm = 0;
 
     // MPBR (maximum point-blank range) sweep settings.
-    const MPBR_TOLERANCES_MM = [15, 25, 40];
+    const MPBR_TOLERANCES_MM = [10, 15, 20, 25, 30, 35, 40];
     const MPBR_ZERO_MIN_M = 12;
     const MPBR_ZERO_MAX_M = 55;
     const MPBR_ZERO_STEP_M = 1;
@@ -1691,14 +1692,16 @@
         if (!r.best) {
           const msg = done ? "掃描範圍內無合適歸零" : "計算中…";
           return `<tr><td class="mpbr-tol">±${r.tol} mm</td>`
-            + `<td class="mpbr-over" colspan="3">${msg}</td></tr>`;
+            + `<td class="mpbr-over" colspan="4">${msg}</td></tr>`;
         }
         const b = r.best;
         const band = `${formatPlain(b.near, 1)} – ${formatPlain(b.far, 1)} m`;
+        const length = (b.far !== null && b.near !== null) ? `${formatPlain(b.far - b.near, 1)} m` : "—";
         const peak = `+${formatPlain(b.peak, 1)} mm @ ${formatPlain(b.peakD, 1)} m`;
         return `<tr><td class="mpbr-tol">±${r.tol} mm</td>`
           + `<td>${formatPlain(b.z, 1)} m</td>`
           + `<td class="mpbr-band">${band}</td>`
+          + `<td class="mpbr-band">${length}</td>`
           + `<td>${peak}</td></tr>`;
       }).join("");
       output.mpbrBody.innerHTML = rows;
